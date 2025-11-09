@@ -4,40 +4,65 @@ import cors from 'cors';
 const app = express();
 app.use(cors());
 
-const activeCodes = new Map();
+// store: deviceId → code and status
+const devices = new Map();
 
-// generate SYZO-<7digit> where number is between 1000000 and 9999999
 function generateCode() {
   const num = Math.floor(1_000_000 + Math.random() * 9_000_000);
   return `SYZO-${num}`;
 }
 
+// --- Generate or fetch a device code ---
 app.get('/new-code', (req, res) => {
-  const code = generateCode();
+  const device = req.query.device;
+  if (!device) return res.status(400).json({ error: 'Missing device ID' });
 
-  if (activeCodes.has(code)) {
-    return res.json({ code: generateCode(), expiresIn: 60 });
+  // if already has a code, return it
+  if (devices.has(device)) {
+    const existing = devices.get(device);
+    return res.json({
+      code: existing.code,
+      used: existing.used,
+    });
   }
 
-  const timeout = setTimeout(() => {
-    activeCodes.delete(code);
-    console.log(`🕒 Code expired: ${code}`);
-  }, 60_000);
-
-  activeCodes.set(code, { createdAt: Date.now(), timeout });
-  console.log(`✅ Generated: ${code}`);
-
-  res.json({ code, expiresIn: 60 });
+  // create a new permanent code for this device
+  const code = generateCode();
+  devices.set(device, { code, used: false });
+  console.log(`✅ New device linked code: ${device} → ${code}`);
+  res.json({ code, used: false });
 });
 
+// --- Verify linking ---
 app.get('/verify', (req, res) => {
-  const { code } = req.query;
-  if (activeCodes.has(code)) {
-    activeCodes.delete(code);
-    res.json({ valid: true });
-  } else {
-    res.json({ valid: false });
+  const { code, discord } = req.query;
+  if (!code || !discord)
+    return res.status(400).json({ error: 'Missing code or discord ID' });
+
+  // find device by code
+  const entry = [...devices.entries()].find(
+    ([, data]) => data.code === code
+  );
+
+  if (!entry) {
+    console.log(`❌ Invalid code: ${code}`);
+    return res.json({ valid: false });
   }
+
+  const [device, data] = entry;
+
+  if (data.used) {
+    console.log(`⚠️ Already linked: ${device}`);
+    return res.json({ valid: false, reason: 'Already linked' });
+  }
+
+  // mark as linked
+  data.used = true;
+  data.discord = discord;
+  devices.set(device, data);
+
+  console.log(`✅ Linked ${discord} ↔️ ${device}`);
+  res.json({ valid: true });
 });
 
 app.listen(8080, () => console.log('🔗 link bridge listening on :8080'));
