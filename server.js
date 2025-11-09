@@ -48,4 +48,19 @@ app.get('/list-codes', (req, res) => {
   res.json(codes);
 });
 
+// Store all generated codes
+const generatedCodes = [];
+
+// Random code generator
+app.get('/new-code', (req, res) => {
+  const code = `SYZO-${Math.floor(1000 + Math.random() * 9000)}`;
+  generatedCodes.push(code);
+  res.json({ code });
+});
+
+// Endpoint to list all codes
+app.get('/codes', (req, res) => {
+  res.json({ codes: generatedCodes });
+});
+
 app.listen(8080, () => console.log('🔗 link bridge listening on :8080'));
